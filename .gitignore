@@ -1,0 +1,7 @@
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+# Data, models and results live on Google Drive, not in the repo
+data/
+models/
+results/

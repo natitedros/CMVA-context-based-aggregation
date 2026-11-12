@@ -1,0 +1,9 @@
+transformers>=4.46
+peft>=0.13
+trl>=0.12
+accelerate
+datasets
+evaluate
+rouge_score
+scikit-learn
+pandas
