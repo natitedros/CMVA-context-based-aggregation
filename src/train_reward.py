@@ -53,10 +53,12 @@ def main():
     ap.add_argument("--lr", type=float, default=2e-5)
     ap.add_argument("--bs", type=int, default=32)
     ap.add_argument("--max_len", type=int, default=256)
+    ap.add_argument("--backbone", default=REWARD_BACKBONE)
+    ap.add_argument("--best_metric", default="auc", choices=["auc", "macro_f1"])
     args = ap.parse_args()
     set_seed(SEED)
 
-    tok = AutoTokenizer.from_pretrained(REWARD_BACKBONE)
+    tok = AutoTokenizer.from_pretrained(args.backbone)
     ds = {}
     for split in ("train", "val", "test"):
         df = pd.read_csv(f"{SPLITS_DIR}/{args.value}_{split}.csv").dropna()
@@ -69,7 +71,7 @@ def main():
     weights = torch.tensor(len(labels) / (2 * np.maximum(counts, 1)), dtype=torch.float)
     print(f"Train label counts: {counts.tolist()} -> class weights {weights.tolist()}")
 
-    model = AutoModelForSequenceClassification.from_pretrained(REWARD_BACKBONE, num_labels=2)
+    model = AutoModelForSequenceClassification.from_pretrained(args.backbone, num_labels=2)
     targs = TrainingArguments(
         output_dir=f"{SCRATCH_DIR}/reward_{args.value}",
         num_train_epochs=args.epochs,
@@ -80,7 +82,7 @@ def main():
         save_strategy="epoch",
         save_total_limit=1,
         load_best_model_at_end=True,
-        metric_for_best_model="macro_f1",
+        metric_for_best_model=args.best_metric,
         fp16=torch.cuda.is_available(),
         logging_steps=50,
         report_to="none",
@@ -107,6 +109,8 @@ def main():
 
     metrics = {
         "value": args.value,
+        "backbone": args.backbone,
+        "epochs": args.epochs,
         "test_accuracy": test.get("test_accuracy"),
         "test_macro_f1": test.get("test_macro_f1"),
         "test_auc": test.get("test_auc"),
