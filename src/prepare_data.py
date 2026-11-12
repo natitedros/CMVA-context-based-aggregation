@@ -32,7 +32,17 @@ def load_mic(path):
     if missing:
         raise SystemExit(f"MIC.csv is missing {missing}. Update the COL_* names at the top of this file.")
     df = df.dropna(subset=[COL_Q, COL_A, COL_MORAL, COL_AGREE])
+    # A few rows in MIC.csv are malformed (text shifted into the label columns).
+    # Keep only rows whose A_agrees is a real label: 0, 1 or 2.
+    agree = pd.to_numeric(df[COL_AGREE], errors="coerce")
+    bad = ~agree.isin([0, 1, 2])
+    if bad.any():
+        print(f"Dropping {int(bad.sum())} malformed rows (non-numeric A_agrees).")
+    df = df[~bad].copy()
+    df[COL_AGREE] = agree[~bad].astype(int)
     print("A_agrees values:", df[COL_AGREE].value_counts().to_dict())
+    if COL_SPLIT in df.columns:
+        print("split values:", df[COL_SPLIT].value_counts().to_dict())
     print("Sample 'moral' values:", df[COL_MORAL].head(5).tolist())
     return df
 
@@ -46,8 +56,10 @@ def has_value(moral_field, value):
 def assign_split(df, rng):
     if COL_SPLIT in df.columns:
         mapping = {"train": "train", "dev": "val", "val": "val", "valid": "val", "validation": "val", "test": "test"}
-        s = df[COL_SPLIT].astype(str).str.lower().map(mapping)
-        if s.notna().all():
+        s = df[COL_SPLIT].astype(str).str.strip().str.lower().map(mapping)
+        if s.notna().mean() > 0.99:
+            if s.isna().any():
+                print(f"Ignoring {int(s.isna().sum())} rows with an unrecognised split value.")
             print("Using MIC's own train/dev/test split.")
             return s
     # Fallback: split by question so the same Q never appears in two splits
