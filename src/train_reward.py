@@ -22,7 +22,7 @@ from config import MODELS_DIR, RESULTS_DIR, REWARD_BACKBONE, SCRATCH_DIR, SEED, 
 
 
 class WeightedTrainer(Trainer):
-    """Cross-entropy with class weights, since MIC labels are imbalanced."""
+    """Cross-entropy with class weights, since MIC and SocialChem labels are imbalanced."""
 
     def __init__(self, class_weights, **kw):
         super().__init__(**kw)
@@ -55,13 +55,15 @@ def main():
     ap.add_argument("--max_len", type=int, default=256)
     ap.add_argument("--backbone", default=REWARD_BACKBONE)
     ap.add_argument("--best_metric", default="auc", choices=["auc", "macro_f1"])
+    ap.add_argument("--splits_dir", default=SPLITS_DIR)
+    ap.add_argument("--tag", default="")
     args = ap.parse_args()
     set_seed(SEED)
 
     tok = AutoTokenizer.from_pretrained(args.backbone)
     ds = {}
     for split in ("train", "val", "test"):
-        df = pd.read_csv(f"{SPLITS_DIR}/{args.value}_{split}.csv").dropna()
+        df = pd.read_csv(f"{args.splits_dir}/{args.value}_{split}.csv").dropna()
         ds[split] = Dataset.from_pandas(df, preserve_index=False).map(
             lambda b: tok(b["text"], truncation=True, max_length=args.max_len), batched=True
         ).rename_column("label", "labels").remove_columns(["text"])
@@ -73,7 +75,7 @@ def main():
 
     model = AutoModelForSequenceClassification.from_pretrained(args.backbone, num_labels=2)
     targs = TrainingArguments(
-        output_dir=f"{SCRATCH_DIR}/reward_{args.value}",
+        output_dir=f"{SCRATCH_DIR}/reward_{args.value}{args.tag}",
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
         per_device_train_batch_size=args.bs,
@@ -103,7 +105,7 @@ def main():
     test = trainer.evaluate(ds["test"], metric_key_prefix="test")
     majority = max(np.mean(ds["test"]["labels"]), 1 - np.mean(ds["test"]["labels"]))
 
-    out_dir = f"{MODELS_DIR}/reward/{args.value}"
+    out_dir = f"{MODELS_DIR}/reward/{args.value}{args.tag}"
     trainer.save_model(out_dir)
     tok.save_pretrained(out_dir)
 
@@ -119,7 +121,7 @@ def main():
         "train_seconds": round(train_secs, 1),
         "peak_gpu_mb": round(torch.cuda.max_memory_allocated() / 2**20) if torch.cuda.is_available() else None,
     }
-    with open(f"{RESULTS_DIR}/reward_{args.value}.json", "w") as f:
+    with open(f"{RESULTS_DIR}/reward_{args.value}{args.tag}.json", "w") as f:
         json.dump(metrics, f, indent=2)
     print(json.dumps(metrics, indent=2))
     print(f"Saved reward model to {out_dir}")
