@@ -125,7 +125,7 @@ def main():
 
     torch.cuda.reset_peak_memory_stats()
     t0 = time.time()
-    trainer.train()
+    train_result = trainer.train()
     train_secs = time.time() - t0
     peak_mb = round(torch.cuda.max_memory_allocated() / 2**20)
     losses = [h["loss"] for h in trainer.state.log_history if "loss" in h]
@@ -147,6 +147,7 @@ def main():
         "peak_train_gpu_mb": peak_mb,
         "first_loss": losses[0] if losses else None,
         "final_loss": losses[-1] if losses else None,
+        "avg_train_loss": round(train_result.training_loss, 4),
         "saved_size_mb": dir_size_mb(out_dir),
         "grad_ckpt": args.grad_ckpt,
     }
