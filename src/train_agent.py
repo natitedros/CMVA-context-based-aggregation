@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import time
+import math
 
 import pandas as pd
 import torch
@@ -102,13 +103,16 @@ def main():
     total = sum(p.numel() for p in model.parameters())
     print(f"Trainable parameters: {trainable:,} of {total:,} ({100 * trainable / total:.2f}%)")
 
+    # 3% of all optimizer steps as warmup (computed here; newer transformers dropped warmup_ratio)
+    total_steps = math.ceil(len(ds) / (args.bs * args.grad_accum)) * args.epochs
+    warmup_steps = max(1, round(0.03 * total_steps))
     targs = TrainingArguments(
         output_dir=f"{SCRATCH_DIR}/{name}",
         num_train_epochs=args.epochs,
         learning_rate=lr,
         per_device_train_batch_size=args.bs,
         gradient_accumulation_steps=args.grad_accum,
-        warmup_ratio=0.03,
+        warmup_steps=warmup_steps,
         fp16=True,
         logging_steps=10,
         save_strategy="no",
