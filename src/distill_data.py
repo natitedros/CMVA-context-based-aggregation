@@ -7,14 +7,14 @@ Colab disconnect; generation also resumes chunk by chunk):
 
   1. Generate: Qwen answers N MIC *train* questions K times each, with sampling.
   2. Score:    every answer is scored by all five reward models (question + answer).
-  3. Select:   for each value, keep the highest-scoring finished answer per question.
-               The control set takes one random finished answer per question instead.
+  3. Select:   for each value, keep the highest-scoring answer per question.
+               The control set takes one random answer per question instead.
 
 Output (on Drive):
   data/distill/candidates/part_XXX.csv    raw generations, one file per chunk
   data/distill/candidates_scored.csv      all answers with p_care ... p_sanctity
-  data/agent_data_distilled/{value}.csv   columns Q, A, score   (training data per value)
-  data/agent_data_distilled/control.csv   columns Q, A          (random answer, no selection)
+  data/agent_data_distilled/{value}.csv   columns Q, A, score, finished   (training data per value)
+  data/agent_data_distilled/control.csv   columns Q, A, finished          (random answer, no selection)
   data/agent_data_distilled/stats.json    the gap check: selected vs. average answer
 """
 import argparse
@@ -111,21 +111,25 @@ def main():
             cands[f"p_{v}"] = score(v, cands["Q"].tolist(), cands["reply"].tolist())
         cands.to_csv(scored_path, index=False)
 
-    # 3. Select. Only finished, non-empty answers can be chosen, so every training answer is complete.
-    ok = cands[cands["finished"].astype(bool) & (cands["reply"].fillna("").str.strip() != "")]
+    # 3. Select from all non-empty answers. Most answers hit the 128-token limit, exactly as at
+    # evaluation, so a cut-off answer is scored and trained on as the same 128-token prefix the
+    # reward model saw. The 'finished' column tells train_agent.py whether to teach the stop token.
+    cands["finished"] = cands["finished"].astype(bool)
+    ok = cands[cands["reply"].fillna("").str.strip() != ""]
     stats = {"answers_total": len(cands), "answers_usable": len(ok),
-             "pct_finished": round(float(cands["finished"].astype(bool).mean()), 3),
+             "pct_finished": round(float(cands["finished"].mean()), 3),
              "questions_usable": int(ok["Q"].nunique())}
-    print(f"\n{len(ok):,} of {len(cands):,} answers finished within {args.max_new_tokens} tokens")
+    print(f"\n{len(ok):,} of {len(cands):,} answers usable; "
+          f"{stats['pct_finished']:.0%} finished within {args.max_new_tokens} tokens")
 
     control = ok.groupby("Q", group_keys=False).sample(n=1, random_state=SEED)
-    control[["Q", "reply"]].rename(columns={"reply": "A"}).to_csv(f"{OUT_DIR}/control.csv", index=False)
+    control[["Q", "reply", "finished"]].rename(columns={"reply": "A"}).to_csv(f"{OUT_DIR}/control.csv", index=False)
 
     print(f"\n{'value':10s} {'average answer':>15s} {'random pick':>12s} {'selected':>9s} {'gap':>6s}")
     for v in VALUES:
         col = f"p_{v}"
         best = ok.loc[ok.groupby("Q")[col].idxmax()]
-        best[["Q", "reply", col]].rename(columns={"reply": "A", col: "score"}).to_csv(
+        best[["Q", "reply", col, "finished"]].rename(columns={"reply": "A", col: "score"}).to_csv(
             f"{OUT_DIR}/{v}.csv", index=False)
         s = {"mean_all_answers": round(float(ok[col].mean()), 4),
              "mean_random_pick": round(float(control[col].mean()), 4),

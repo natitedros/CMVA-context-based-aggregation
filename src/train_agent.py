@@ -30,12 +30,12 @@ from config import BASE_LM, DATA_DIR, MODELS_DIR, RESULTS_DIR, SCRATCH_DIR, SEED
 LORA_TARGETS = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
 
-def tokenize(tok, q, a, max_len, end_id):
+def tokenize(tok, q, a, max_len, end_id, add_end=True):
     """Same chat format as generation. Loss is computed on the answer tokens only."""
     prompt = tok.apply_chat_template([{"role": "user", "content": q}], tokenize=False,
                                      add_generation_prompt=True)
     p_ids = tok(prompt, add_special_tokens=False)["input_ids"]
-    a_ids = tok(a, add_special_tokens=False)["input_ids"] + [end_id]
+    a_ids = tok(a, add_special_tokens=False)["input_ids"] + ([end_id] if add_end else [])
     ids = (p_ids + a_ids)[:max_len]
     labels = ([-100] * len(p_ids) + a_ids)[:max_len]
     return {"input_ids": ids, "attention_mask": [1] * len(ids), "labels": labels}
@@ -85,7 +85,8 @@ def main():
     df = pd.read_csv(f"{args.data_dir}/{args.value}.csv").dropna()
     if args.n_train:
         df = df.head(args.n_train)
-    ds = Dataset.from_list([tokenize(tok, q, a, args.max_len, end_id) for q, a in zip(df["Q"], df["A"])])
+    finished = df["finished"].astype(bool) if "finished" in df.columns else [True] * len(df)
+    ds = Dataset.from_list([tokenize(tok, q, a, args.max_len, end_id, f) for q, a, f in zip(df["Q"], df["A"], finished)])
     print(f"{len(ds)} training examples for {name}")
 
     # Model: fp32 weights + fp16 mixed precision in both arms (the T4 has no bf16)
