@@ -68,6 +68,7 @@ def main():
     ap.add_argument("--n_train", type=int, default=None, help="use only the first N examples")
     ap.add_argument("--grad_ckpt", action="store_true", help="trade speed for memory (use in BOTH arms)")
     ap.add_argument("--tag", default="")
+    ap.add_argument("--data_dir", default=f"{DATA_DIR}/agent_data")
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
     lr = args.lr or (1e-5 if args.mode == "full" else 2e-4)
@@ -81,7 +82,7 @@ def main():
     # Data
     tok = AutoTokenizer.from_pretrained(BASE_LM)
     end_id = tok.convert_tokens_to_ids("<|im_end|>")
-    df = pd.read_csv(f"{DATA_DIR}/agent_data/{args.value}.csv").dropna()
+    df = pd.read_csv(f"{args.data_dir}/{args.value}.csv").dropna()
     if args.n_train:
         df = df.head(args.n_train)
     ds = Dataset.from_list([tokenize(tok, q, a, args.max_len, end_id) for q, a in zip(df["Q"], df["A"])])
